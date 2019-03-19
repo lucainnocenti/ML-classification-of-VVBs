@@ -11,7 +11,7 @@ import seaborn as sns
 from PIL import Image
 
 import keras
-import theano
+import tensorflow
 
 
 def angle(x, y):
@@ -30,19 +30,10 @@ def LaguerreGauss(x, y, p, m, w0=1.):
     return lg
 
 
-def plot_intensity(amplitudes, imshow_opts={}, ax=None):
-    if ax is None:
-        _, ax = plt.subplots(1, 1)
-    intensities = np.abs(amplitudes)**2
-    ax.imshow(intensities, interpolation='nearest', cmap='magma',
-              origin='lower', **imshow_opts)
-    # ax.axis('off')
-
-
 def rotation_matrix(theta):
-    """Compute 2D rotation matrix given an angle in degrees (NOT radians)."""
-    return np.array([[np.cos(np.radians(theta)), -np.sin(np.radians(theta))],
-                     [np.sin(np.radians(theta)), np.cos(np.radians(theta))]])
+    """Compute 2D rotation matrix given an angle in degrees."""
+    return np.array([[np.cos(theta), -np.sin(theta)],
+                     [np.sin(theta), np.cos(theta)]])
 
 
 def rotated_waveplate_matrix(theta, waveplate_matrix):
@@ -78,7 +69,7 @@ def polarization_projection_matrix_from_waveplates(alpha_HWP, alpha_QWP):
     return np.dot(rotated_HWP_matrix(alpha_HWP), rotated_QWP_matrix(alpha_QWP))
 
 
-def polarization_basis_states(which):
+def su2_basis_states(which):
     """Return commonly used basis states from a name."""
     if which == 'H':
         return np.array([1, 0])
@@ -92,3 +83,9 @@ def polarization_basis_states(which):
         return [1, 1] / np.sqrt(2)
     elif which == 'A':
         return [1, -1] / np.sqrt(2)
+
+
+def bloch_sphere_vector(theta, phi):
+    """Amplitudes of Bloch sphere vector in usual notation."""
+    return np.asarray([np.cos(theta / 2), np.sin(theta / 2) * np.exp(1j * phi)])
+
