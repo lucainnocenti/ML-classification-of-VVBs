@@ -1,0 +1,17 @@
+c1 c26 sono i poli. 
+
+c1 0°<alpha<22.5° beta è random tra 0 e 360°
+c26 157.5°<alpha<180° beta è random tra 0 e 360°
+
+Le restanti classi corrispondono a 3 settori di alpha e 8 per beta ciascuno che copre un intervallo di 45°
+Nello specifico
+
+c2 0<beta<45  22.5<alpha<67.5
+c3    ,,      67.5<alpha<112.5
+c4    ,,      112.5<alpha<157.5
+
+c5 45<beta<90 22.5<alpha<67.5
+c6    ,,      67.5<alpha<112.5
+c7    ,,      112.5<alpha<157.5
+
+e così via
