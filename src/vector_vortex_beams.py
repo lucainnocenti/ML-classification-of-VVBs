@@ -6,13 +6,18 @@ import numpy as np
 import pandas as pd
 import scipy
 import scipy.special
+import sklearn
+import sklearn.decomposition
 
-import keras
-import matplotlib.pyplot as plt
-import seaborn as sns
-import tensorflow
-from PIL import Image
+# import keras
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+# import tensorflow
+from tqdm import tqdm
+import collections
+import itertools
 
+import utils
 from utils import abs2
 
 
@@ -113,16 +118,25 @@ def vector_vortex_stokes_pars(X, Y, p, m_pair, w0, polarization_state):
     """
     if len(m_pair) != 2:
         raise ValueError('There must be two elements in `m_pair`.')
-    amps_first_m = LaguerreGauss(X, Y, p, m_pair[0], w0)
-    amps_second_m = LaguerreGauss(X, Y, p, m_pair[1], w0)
+    
+    # amps_m1 = LaguerreGauss(X, Y, p, m_pair[0], w0)
+    # amps_m2 = LaguerreGauss(X, Y, p, m_pair[1], w0)
+    # states_to_project_upon = _su2_basis_states(['0', '1', '+', '-', 'R', 'L'])
+    # probabilities_for_basis_states = hyperentangled_qubit_projection(
+    #     qubit_amps=polarization_state,
+    #     qudits_amps=[amps_m1, amps_m2],
+    #     projectors=states_to_project_upon
+    # )
+    # return probabilities_to_stokes_parameters(probabilities_for_basis_states)
 
-    states_to_project_upon = _su2_basis_states(['0', '1', '+', '-', 'R', 'L'])
-    probabilities_for_basis_states = hyperentangled_qubit_projection(
-        qubit_amps=polarization_state,
-        qudits_amps=[amps_first_m, amps_second_m],
-        projectors=states_to_project_upon
-    )
-    return probabilities_to_stokes_parameters(probabilities_for_basis_states)
+    c0, c1 = polarization_state
+    amps_m1 = c0 * LaguerreGauss(X, Y, p, m_pair[0], w0)
+    amps_m2 = c1 * LaguerreGauss(X, Y, p, m_pair[1], w0)
+    average_Z = abs2(c0) * abs2(amps_m1) - abs2(c1) * abs2(amps_m2)
+    twice_c0star_times_c1 = 2 * np.conj(amps_m1) * amps_m2
+    average_X = np.real(twice_c0star_times_c1)
+    average_Y = np.imag(twice_c0star_times_c1)
+    return np.array([average_Z, average_X, average_Y])
 
 
 def rotation_matrix(theta):
@@ -162,4 +176,90 @@ def polarization_projection_matrix_from_waveplates(alpha_HWP, alpha_QWP):
     """Compute polarization projectors with rotated waveplates matrices.
     """
     return np.dot(rotated_HWP_matrix(alpha_HWP), rotated_QWP_matrix(alpha_QWP))
+
+
+class VVBDataset:
+    def __init__(self, X, Y, w0):
+        self.X = X
+        self.Y = Y
+        self.w0 = w0
+
+    def _generate_data_one_type(self, p, m_pair, num_samples, noise_level,
+                                polarization_state):
+        data = np.zeros(shape=(num_samples, len(self.X) * len(self.Y) * 3))
+        for idx in range(num_samples):
+            if isinstance(polarization_state, str):
+                if polarization_state == 'random phases':
+                    theta = 1j * 2 * np.pi * np.random.rand(1)
+                elif polarization_state == 'sequential phases':
+                    theta = 1j * 2 * np.pi * idx / num_samples
+                else:
+                    raise ValueError('Unrecognised option')
+                pol_state = [1, np.exp(1j * theta)] / np.sqrt(2)
+            else:
+                pol_state = polarization_state
+
+            probs = vector_vortex_stokes_pars(
+                X=self.X, Y=self.Y, p=p,
+                m_pair=m_pair, w0=self.w0,
+                polarization_state=pol_state
+            ).flatten()
+            data[idx] = utils.add_noise_to_array(probs, noise_level=noise_level)
+        return data
+
+    def generate_data(self, parameters, num_samples=50, noise_level=0.1,
+                      monitor=False, polarization_state='random phase'):
+        """Generate vectors corresponding to Stoke parameters.
+        
+        Attributes
+        ----------
+        parameters ; list of tuples
+            Each element should be a pair (p, (m1, m2)).
+        """
+        dataset = collections.OrderedDict()
+        labels_names = []
+
+        iterator = range(len(parameters))
+        if monitor:
+            iterator = tqdm(iterator)
+        # loop over the parameters given to generate the data
+        for par_idx in iterator:
+            parameter = parameters[par_idx]
+            dataset[parameter] = self._generate_data_one_type(
+                p=parameter[0], m_pair=parameter[1],
+                num_samples=num_samples, noise_level=noise_level,
+                polarization_state=polarization_state
+            )
+            labels_names.append(str(parameter))
+
+        self.dataset = dataset
+        self.labels_names = labels_names
+    
+    def apply_PCA(self, n_components, **kwargs):
+        self.pca = sklearn.decomposition.PCA(n_components, **kwargs)
+        self.pca.fit(utils.merge_dict_elements(self.dataset))
+
+    def fit_SVM(self, num_dimensions=None, **kwargs):
+        # use previously trained PCA to reduce dimensions
+        reduced_dataset = self.pca.transform(
+            utils.merge_dict_elements(self.dataset))
+        if num_dimensions is None:
+            num_dimensions = reduced_dataset.shape[1]
+        reduced_dataset = reduced_dataset[:, :num_dimensions]
+
+        # generate labels for classification
+        labels = []
+        for label, data in self.dataset.items():
+            labels += [str(label)] * data.shape[0]
+
+        # fucking classify already
+        clf = sklearn.svm.SVC(**kwargs)
+        clf.fit(reduced_dataset, labels)
+        self.svc = clf
+
+    def reduce_and_classify(self, data):
+        """Apply PCA reduction and then classify using SVM."""
+        num_dimensions = self.svc.support_vectors_.shape[1]
+        reduced_data = self.pca.transform(data)[:, :num_dimensions]
+        return self.svc.predict(reduced_data)
 
