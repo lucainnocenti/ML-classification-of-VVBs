@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+import logging
 
 import numpy as np
 import pandas as pd
@@ -115,6 +116,7 @@ def vector_vortex_stokes_pars(X, Y, p, m_pair, w0, polarization_state):
     Returns
     -------
     The set of three Stokes probability vectors associated with the state.
+    This is a numpy array of shape (3, N, M), where N, M = X.shape = Y.shape
     """
     if len(m_pair) != 2:
         raise ValueError('There must be two elements in `m_pair`.')
@@ -178,11 +180,176 @@ def polarization_projection_matrix_from_waveplates(alpha_HWP, alpha_QWP):
     return np.dot(rotated_HWP_matrix(alpha_HWP), rotated_QWP_matrix(alpha_QWP))
 
 
-class VVBDataset:
+def accuracies_from_predictions(true_labels, predicted_labels, labels_names):
+    """Build dictionary of accuracies from true and predicted labels.
+
+    Attributes
+    ----------
+    true_labels : array of ints
+        Array of ints of shape (num_samples,). Each element contains an int
+        that represent one of the labels in `labels_names`. It represents the
+        true labels associated with the elements of a dataset.
+    predicted_labels : array of ints
+        Same as true_labels, but representing the labels that were predicted
+        via some classification algorithm on the same dataset.
+    labels_names : list of strings
+        Each elements contains the name of a label. The ints of true_labels
+        are assumed to represent elements from this list.
+    """
+    accuracies_per_label = collections.OrderedDict()
+    for label_idx, label_name in enumerate(labels_names):
+        # initialize list of number of predicted labels per each true label
+        accuracies = [0] * len(labels_names)
+        # extract predictions for the specific label
+        predictions = predicted_labels[true_labels == label_idx]
+        # accuracies = list(collections.Counter(predictions).values())
+        for outlabel_idx, count in collections.Counter(predictions).items():
+            accuracies[outlabel_idx] = count
+        accuracies_per_label[label_name] = accuracies
+    return accuracies_per_label
+
+
+class ReduceAndClassify:
+    def __init__(self, labeled_dataset=None):
+        """Initialize class instance.
+
+        Attributes
+        ----------
+        labeled_dataset : dict
+            Each element of the dictionary should correspond to a dataset
+            associated with a different labels. The keys are taken to be the
+            names of the different labels.
+        """
+        self.labels_names = []
+        self.labels = None
+        self.dataset = None
+        self.reduced_dataset = None
+        self.pca = None
+        self.svc = None
+
+        if labeled_dataset is not None:
+            self.add_dataset(labeled_dataset)
+    
+    def add_dataset(self, labeled_dataset):
+        labeled_dataset = collections.OrderedDict(labeled_dataset)
+        new_labels_names = list(labeled_dataset.keys())
+        # if there are new labels, add them to the list
+        for new_label_name in new_labels_names:
+            if new_label_name not in self.labels_names:
+                self.labels_names += [new_label_name]
+        # separate labels and data and append as appropriate
+        for label, data in labeled_dataset.items():
+            # append new label information
+            new_labels = [self.labels_names.index(label)] * data.shape[0]
+            if self.labels is None:
+                self.labels = new_labels
+            else:
+                self.labels += new_labels
+            # append new data to dataset
+            if self.dataset is None:
+                self.dataset = data
+            else:
+                self.dataset = np.concatenate((self.dataset, data), axis=0)
+
+    def apply_PCA(self, n_components, **kwargs):
+        self.pca = sklearn.decomposition.PCA(n_components, **kwargs)
+        self.reduced_dataset = self.pca.fit_transform(self.dataset)
+    
+    def fit_SVM(self, num_dimensions=None, **kwargs):
+        if self.reduced_dataset is None or self.pca is None:
+            raise ValueError('Apply PCA before doing this.')
+        # use previously trained PCA to reduce dimensions
+        if num_dimensions is None:
+            num_dimensions = self.reduced_dataset.shape[1]
+
+        # if the number of requested dimensions is smaller than the one used
+        # previously for the dimensionality reduction, take only the relevant
+        # first dimensions
+        if num_dimensions < self.reduced_dataset.shape[1]:
+            reduced_dataset = self.reduced_dataset[:, :num_dimensions]
+        else:
+            reduced_dataset = self.reduced_dataset
+
+        # fucking classify already
+        clf = sklearn.svm.SVC(**kwargs)
+        clf.fit(reduced_dataset, self.labels)
+        self.svc = clf
+    
+    def reduce_and_classify(self, data):
+        """Apply PCA SVC to new data.
+        
+        Attributes
+        ----------
+        data : numpy array
+            The shape must be (num_samples, dim_classifier), where dim_classifier
+            is the dimension of the vectors on which the SVC was trained.
+        """
+        if self.svc is None:
+            raise ValueError('The classifier must be trained before this.')
+        num_dimensions = self.svc.support_vectors_.shape[1]
+        reduced_data = self.pca.transform(data)[:, :num_dimensions]
+        return self.svc.predict(reduced_data)
+
+    def cut_feature_space_components(self, data, num_dimensions=None):
+        if self.pca is None:
+            raise ValueError('The classifier must be trained before this.')
+        reduced_data = self.pca.transform(data)
+        if num_dimensions is not None:
+            reduced_data[:, num_dimensions:] = 0
+        return self.pca.inverse_transform(reduced_data)
+
+
+class OAMDataset(ReduceAndClassify):
     def __init__(self, X, Y, w0):
         self.X = X
         self.Y = Y
         self.w0 = w0
+        super().__init__()
+
+    def _generate_data_one_type(self, pm_list, num_samples, noise_level):
+        """Generate OAM states superposition of given p and m parameters."""
+        data = np.zeros(shape=(num_samples, len(self.X) * len(self.Y)))
+        for idx in range(num_samples):
+            amps = np.zeros(shape=len(self.X) * len(self.Y), dtype=np.complex)
+            for p, m in pm_list:
+                amps += LaguerreGauss(
+                    self.X, self.Y, p=p, m=m, w0=self.w0).flatten()
+            data[idx] = utils.add_noise_to_array(abs2(amps), noise_level=noise_level)
+        return data
+
+    def generate_data(self, parameters, num_samples=50, noise_level=0.1,
+                      monitor=False, polarization_state='random phase'):
+        """Generate vectors corresponding to OAM states.
+        
+        Attributes
+        ----------
+        parameters ; list of tuples
+            Each element should be a list of pairs [(p1, m1), (p2, m2), ...].
+        """
+        dataset = collections.OrderedDict()
+        labels_names = []
+
+        iterator = range(len(parameters))
+        if monitor:
+            iterator = tqdm(iterator)
+        # loop over the parameters given to generate the data
+        for par_idx in iterator:
+            parameter_list = parameters[par_idx]
+            dataset[tuple(parameter_list)] = self._generate_data_one_type(
+                pm_list=parameter_list,
+                num_samples=num_samples, noise_level=noise_level
+            )
+            labels_names.append(str(tuple(parameter_list)))
+
+        self.add_dataset(dataset)
+
+
+class VVBDataset(ReduceAndClassify):
+    def __init__(self, X, Y, w0):
+        self.X = X
+        self.Y = Y
+        self.w0 = w0
+        super().__init__()
 
     def _generate_data_one_type(self, p, m_pair, num_samples, noise_level,
                                 polarization_state):
@@ -195,7 +362,7 @@ class VVBDataset:
                     theta = 1j * 2 * np.pi * idx / num_samples
                 else:
                     raise ValueError('Unrecognised option')
-                pol_state = [1, np.exp(1j * theta)] / np.sqrt(2)
+                pol_state = [1, np.exp(theta)] / np.sqrt(2)
             else:
                 pol_state = polarization_state
 
@@ -232,34 +399,7 @@ class VVBDataset:
             )
             labels_names.append(str(parameter))
 
-        self.dataset = dataset
-        self.labels_names = labels_names
-    
-    def apply_PCA(self, n_components, **kwargs):
-        self.pca = sklearn.decomposition.PCA(n_components, **kwargs)
-        self.pca.fit(utils.merge_dict_elements(self.dataset))
+        self.add_dataset(dataset)
 
-    def fit_SVM(self, num_dimensions=None, **kwargs):
-        # use previously trained PCA to reduce dimensions
-        reduced_dataset = self.pca.transform(
-            utils.merge_dict_elements(self.dataset))
-        if num_dimensions is None:
-            num_dimensions = reduced_dataset.shape[1]
-        reduced_dataset = reduced_dataset[:, :num_dimensions]
 
-        # generate labels for classification
-        labels = []
-        for label, data in self.dataset.items():
-            labels += [str(label)] * data.shape[0]
-
-        # fucking classify already
-        clf = sklearn.svm.SVC(**kwargs)
-        clf.fit(reduced_dataset, labels)
-        self.svc = clf
-
-    def reduce_and_classify(self, data):
-        """Apply PCA reduction and then classify using SVM."""
-        num_dimensions = self.svc.support_vectors_.shape[1]
-        reduced_data = self.pca.transform(data)[:, :num_dimensions]
-        return self.svc.predict(reduced_data)
 

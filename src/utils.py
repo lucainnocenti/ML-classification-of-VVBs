@@ -40,10 +40,12 @@ def imshow_stokes_probs(prob_vectors, imshow_opts={}, axs=None, show_axis=True):
     Attributes
     ----------
     prob_vectors : list of three probability vectors
-        Should be of shape (3, N, M).
+        Should be of shape (3, N, M). If it is (N, M, 3) transpose is applied.
     """
+    if prob_vectors.shape[2] == 3:
+        prob_vectors = np.transpose(prob_vectors, (2, 0, 1))
     if axs is None:
-        fig, axs = plt.subplots(1, ncols=3, sharey=True)
+        _, axs = plt.subplots(1, ncols=3, sharey=True)
     labels = ['0/1', '+/-', 'L/R']
     for ax, prob_vector, label in zip(axs, prob_vectors, labels):
         ax.imshow(prob_vector, **imshow_opts)
@@ -60,15 +62,20 @@ def add_noise_to_array(data, noise_level=0.1):
     return data + np.random.randn(*data.shape) * (noise_level * range_)
 
 
+def rescale_array_values(array, range_):
+    min_, max_ = range_
+    arr_min = array.min()
+    arr_max = array.max()
+    return min_ + (array - arr_min) / (arr_max - arr_min) * (max_ - min_)
+
+
 def make_into_rgb_format(array):
     """Make an N x M x 3 array fit for the RGB format."""
     # rescale to that min and max are 0 and 255, respectively
     # NOTE: I am not so sure about the correctness of the rescaling, CHECK
     if array.shape[0] == 3:
         array = np.transpose(array, (1, 2, 0))
-    array = array + np.abs(array.min())
-    array = (array * 255 / array.max()).astype(np.uint8)
-    return array
+    return rescale_array_values(array, [0, 255]).astype(np.uint8)
 
 
 def plot_stokes_probs_as_rbg(stokes_probs, ax=None):
