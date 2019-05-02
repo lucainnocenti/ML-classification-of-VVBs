@@ -15,12 +15,12 @@ import sklearn.decomposition
 # import seaborn as sns
 # import tensorflow
 from tqdm import tqdm
+import progressbar
 import collections
 import itertools
 
-import utils
-from utils import abs2
-
+import src.utils as utils
+from src.utils import abs2
 
 
 def angle(x, y):
@@ -112,6 +112,7 @@ def vector_vortex_stokes_pars(X, Y, p, m_pair, w0, polarization_state):
         Coefficients of the polarization state that is entangled with the OAM.
         We assume the polarization state is pure, and the parameters are the
         complex coefficient in the computational basis.
+        In other words, these are the values of c0 and c1 above.
     
     Returns
     -------
@@ -120,21 +121,11 @@ def vector_vortex_stokes_pars(X, Y, p, m_pair, w0, polarization_state):
     """
     if len(m_pair) != 2:
         raise ValueError('There must be two elements in `m_pair`.')
-    
-    # amps_m1 = LaguerreGauss(X, Y, p, m_pair[0], w0)
-    # amps_m2 = LaguerreGauss(X, Y, p, m_pair[1], w0)
-    # states_to_project_upon = _su2_basis_states(['0', '1', '+', '-', 'R', 'L'])
-    # probabilities_for_basis_states = hyperentangled_qubit_projection(
-    #     qubit_amps=polarization_state,
-    #     qudits_amps=[amps_m1, amps_m2],
-    #     projectors=states_to_project_upon
-    # )
-    # return probabilities_to_stokes_parameters(probabilities_for_basis_states)
 
     c0, c1 = polarization_state
-    amps_m1 = c0 * LaguerreGauss(X, Y, p, m_pair[0], w0)
-    amps_m2 = c1 * LaguerreGauss(X, Y, p, m_pair[1], w0)
-    average_Z = abs2(c0) * abs2(amps_m1) - abs2(c1) * abs2(amps_m2)
+    amps_m1 = c0 * LaguerreGauss(X, Y, p=p, m=m_pair[0], w0=w0)
+    amps_m2 = c1 * LaguerreGauss(X, Y, p=p, m=m_pair[1], w0=w0)
+    average_Z = abs2(amps_m1) - abs2(amps_m2)
     twice_c0star_times_c1 = 2 * np.conj(amps_m1) * amps_m2
     average_X = np.real(twice_c0star_times_c1)
     average_Y = np.imag(twice_c0star_times_c1)
@@ -180,33 +171,34 @@ def polarization_projection_matrix_from_waveplates(alpha_HWP, alpha_QWP):
     return np.dot(rotated_HWP_matrix(alpha_HWP), rotated_QWP_matrix(alpha_QWP))
 
 
-def accuracies_from_predictions(true_labels, predicted_labels, labels_names):
-    """Build dictionary of accuracies from true and predicted labels.
+# def accuracies_from_predictions(true_labels, predicted_labels, labels_names):
+#     """Build dictionary of accuracies from true and predicted labels.
 
-    Attributes
-    ----------
-    true_labels : array of ints
-        Array of ints of shape (num_samples,). Each element contains an int
-        that represent one of the labels in `labels_names`. It represents the
-        true labels associated with the elements of a dataset.
-    predicted_labels : array of ints
-        Same as true_labels, but representing the labels that were predicted
-        via some classification algorithm on the same dataset.
-    labels_names : list of strings
-        Each elements contains the name of a label. The ints of true_labels
-        are assumed to represent elements from this list.
-    """
-    accuracies_per_label = collections.OrderedDict()
-    for label_idx, label_name in enumerate(labels_names):
-        # initialize list of number of predicted labels per each true label
-        accuracies = [0] * len(labels_names)
-        # extract predictions for the specific label
-        predictions = predicted_labels[true_labels == label_idx]
-        # accuracies = list(collections.Counter(predictions).values())
-        for outlabel_idx, count in collections.Counter(predictions).items():
-            accuracies[outlabel_idx] = count
-        accuracies_per_label[label_name] = accuracies
-    return accuracies_per_label
+#     Attributes
+#     ----------
+#     true_labels : array of ints
+#         Array of ints of shape (num_samples,). Each element contains an int
+#         that represent one of the labels in `labels_names`. It represents the
+#         true labels associated with the elements of a dataset.
+#     predicted_labels : array of ints
+#         Same as true_labels, but representing the labels that were predicted
+#         via some classification algorithm on the same dataset.
+#     labels_names : list of strings
+#         Each elements contains the name of a label. The ints of true_labels
+#         are assumed to represent elements from this list.
+#     """
+#     accuracies_per_label = collections.OrderedDict()
+#     for label_idx, label_name in enumerate(labels_names):
+#         # initialize list of number of predicted labels per each true label
+#         accuracies = [0] * len(labels_names)
+#         # extract predictions for the specific label
+#         predictions = predicted_labels[true_labels == label_idx]
+#         print(label_idx, label_name, predictions)
+#         # accuracies = list(collections.Counter(predictions).values())
+#         for outlabel_idx, count in collections.Counter(predictions).items():
+#             accuracies[outlabel_idx] = count
+#         accuracies_per_label[label_name] = accuracies
+#     return accuracies_per_label
 
 
 class ReduceAndClassify:
@@ -318,7 +310,7 @@ class OAMDataset(ReduceAndClassify):
         return data
 
     def generate_data(self, parameters, num_samples=50, noise_level=0.1,
-                      monitor=False, polarization_state='random phase'):
+                      monitor=False, polarization_state='random phases'):
         """Generate vectors corresponding to OAM states.
         
         Attributes
@@ -330,7 +322,12 @@ class OAMDataset(ReduceAndClassify):
         labels_names = []
 
         iterator = range(len(parameters))
-        if monitor:
+        # monitoring with progressbar only work with jupyter notebooks, while
+        # for jupyterlab only the tqdm one works well, hence the choice here
+        if monitor and isinstance(monitor, str) and monitor == 'progressbar':
+            bar = progressbar.ProgressBar()
+            iterator = bar(iterator)
+        elif monitor:
             iterator = tqdm(iterator)
         # loop over the parameters given to generate the data
         for par_idx in iterator:
@@ -357,12 +354,21 @@ class VVBDataset(ReduceAndClassify):
         for idx in range(num_samples):
             if isinstance(polarization_state, str):
                 if polarization_state == 'random phases':
-                    theta = 1j * 2 * np.pi * np.random.rand(1)
+                    phi = 1j * 2 * np.pi * np.random.rand(1)
+                    c0 = 1 / np.sqrt(2)
+                    c1 = c0
                 elif polarization_state == 'sequential phases':
-                    theta = 1j * 2 * np.pi * idx / num_samples
+                    phi = 1j * 2 * np.pi * idx / num_samples
+                    c0 = 1 / np.sqrt(2)
+                    c1 = c0
+                elif polarization_state == 'uniform random':
+                    phi = 1j * 2 * np.pi * np.random.rand(1)
+                    theta = np.pi * np.random.rand(1)
+                    c0 = np.cos(theta)
+                    c1 = np.sin(theta)
                 else:
                     raise ValueError('Unrecognised option')
-                pol_state = [1, np.exp(theta)] / np.sqrt(2)
+                pol_state = [c0, c1 * np.exp(phi)]
             else:
                 pol_state = polarization_state
 
@@ -375,7 +381,7 @@ class VVBDataset(ReduceAndClassify):
         return data
 
     def generate_data(self, parameters, num_samples=50, noise_level=0.1,
-                      monitor=False, polarization_state='random phase'):
+                      monitor=False, polarization_state='random phases'):
         """Generate vectors corresponding to Stoke parameters.
         
         Attributes

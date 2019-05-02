@@ -1,5 +1,6 @@
 import os
 import sys
+import collections
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,10 +26,15 @@ def borderless_imshow_save(data, outputname, size=1, dpi=80, imshow_opts={}):
     plt.close(fig)
 
 
-def imshow_intensities(amplitudes, imshow_opts={}, ax=None):
+def imshow_intensities(amplitudes=None, intensities=None, imshow_opts={}, ax=None):
+    if amplitudes is None and intensities is None:
+        raise ValueError('One of `amplitudes` and `intensities` must be given.')
+    if amplitudes is not None and intensities is not None:
+        raise ValueError('Only one of `amplitudes` and `intensities` must be given.')
+    if amplitudes is not None:
+        intensities = np.abs(amplitudes)**2
     if ax is None:
         _, ax = plt.subplots(1, 1)
-    intensities = np.abs(amplitudes)**2
     ax.imshow(intensities, interpolation='nearest', cmap='magma',
               origin='lower', **imshow_opts)
     ax.axis('off')
@@ -62,11 +68,14 @@ def add_noise_to_array(data, noise_level=0.1):
     return data + np.random.randn(*data.shape) * (noise_level * range_)
 
 
-def rescale_array_values(array, range_):
+def rescale_array_values(array, range_, old_range=None):
     min_, max_ = range_
-    arr_min = array.min()
-    arr_max = array.max()
-    return min_ + (array - arr_min) / (arr_max - arr_min) * (max_ - min_)
+    if old_range is None:
+        old_min = array.min()
+        old_max = array.max()
+    else:
+        old_min, old_max = old_range
+    return min_ + (array - old_min) / (old_max - old_min) * (max_ - min_)
 
 
 def make_into_rgb_format(array):
@@ -87,13 +96,36 @@ def plot_stokes_probs_as_rbg(stokes_probs, ax=None):
 
 
 def merge_dict_elements(dict_):
+    """Merge all elements of the dictionary into a single array."""
     data = None
     for key in list(dict_):
         if data is None:
             data = dict_[key]
         else:
-            data = np.append(data, dict_[key], axis=0)
+            data = np.vstack((data, dict_[key]))
     return data
+
+
+def dict_of_arrays_to_labeled_array(dict_):
+    """Convert dict of arrays into a single array plus an array of labels.
+
+    This function assumes that the keys of the given dictionary are of the form
+    `cXX`, where `c` is a single char, and `XX` some integer number.
+
+
+    """
+    data = None
+    labels = None
+    for key in dict_:
+        new_data = dict_[key]
+        new_labels = np.full(shape=dict_[key].shape[0], fill_value=key)
+        if data is None:
+            data = new_data
+            labels = new_labels
+        else:
+            data = np.vstack((data, new_data))
+            labels = np.append(labels, new_labels)
+    return data, labels
 
 
 def truncate_in_reduced_space(data, trained_pca, num_dimensions_left):
@@ -114,3 +146,27 @@ def truncate_in_reduced_space(data, trained_pca, num_dimensions_left):
     reduced_data = trained_pca.transform(data)
     reduced_data[:, num_dimensions_left:] = 0
     return trained_pca.inverse_transform(reduced_data)
+
+
+def compute_accuracies_per_label(true_labels, predicted_labels):
+    possible_labels = list(set(true_labels))  # do not have to be numeric
+    # convert the labels into integers to ease handling
+    labels_indices = list(range(len(possible_labels)))
+    
+    accuracies_per_label = collections.OrderedDict()
+    for label_idx in labels_indices:
+        # we want to compute the output accuracies for this specific label
+        accuracies = np.zeros(shape=(len(possible_labels),))
+        # extract the elements corresponding to the currently considered true label
+        true_labels_indices = np.where(true_labels == possible_labels[label_idx])
+        true_labels_per_class = true_labels[true_labels_indices]
+        predictions = predicted_labels[true_labels_indices]
+        # we iterate over all the labels that the classifier associated with the
+        # currently considered true label
+        for predicted_label_name, count in collections.Counter(predictions).items():
+            # extract the index associated with this predicted label
+            predicted_label_idx = possible_labels.index(predicted_label_name)
+            # put the number of times this label was predicted where appropriate in the `accuracies` array
+            accuracies[predicted_label_idx] = count / len(predictions)
+        accuracies_per_label[label_idx] = accuracies
+    return accuracies_per_label
