@@ -148,25 +148,74 @@ def truncate_in_reduced_space(data, trained_pca, num_dimensions_left):
     return trained_pca.inverse_transform(reduced_data)
 
 
-def compute_accuracies_per_label(true_labels, predicted_labels):
-    possible_labels = list(set(true_labels))  # do not have to be numeric
+def compute_accuracies_per_label(true_labels, predicted_labels, labels_names=None):
+    if labels_names is None:
+        labels_names = list(set(true_labels))  # do not have to be numeric
     # convert the labels into integers to ease handling
-    labels_indices = list(range(len(possible_labels)))
+    labels_indices = list(range(len(labels_names)))
     
     accuracies_per_label = collections.OrderedDict()
     for label_idx in labels_indices:
         # we want to compute the output accuracies for this specific label
-        accuracies = np.zeros(shape=(len(possible_labels),))
+        accuracies = np.zeros(shape=(len(labels_names),))
         # extract the elements corresponding to the currently considered true label
-        true_labels_indices = np.where(true_labels == possible_labels[label_idx])
-        true_labels_per_class = true_labels[true_labels_indices]
+        true_labels_indices = np.where(true_labels == labels_names[label_idx])
+        # true_labels_per_class = true_labels[true_labels_indices]
         predictions = predicted_labels[true_labels_indices]
         # we iterate over all the labels that the classifier associated with the
         # currently considered true label
         for predicted_label_name, count in collections.Counter(predictions).items():
             # extract the index associated with this predicted label
-            predicted_label_idx = possible_labels.index(predicted_label_name)
-            # put the number of times this label was predicted where appropriate in the `accuracies` array
+            predicted_label_idx = labels_names.index(predicted_label_name)
+            # put the number of times this label was predicted in `accuracies`
             accuracies[predicted_label_idx] = count / len(predictions)
         accuracies_per_label[label_idx] = accuracies
     return accuracies_per_label
+
+
+def cartesian_to_angles(data):
+    norms = scipy.linalg.norm(data, axis=1)
+    angles = np.zeros(shape=(norms.shape[0], data.shape[1] - 1))
+    for angle_idx in range(data.shape[1] - 1):
+        angles[:, angle_idx] = np.arccos(data[:, angle_idx + 1] / norms)
+    data = np.concatenate((norms[:, None], angles), axis=1)
+    return data
+
+
+def to_spherical_coordinates(xyz):
+    """Takes cartesian (x, y, z) and returns spherical (r, theta, phi)."""
+    rho = xyz[0]**2 + xyz[1]**2
+    r = np.sqrt(rho + xyz[2]**2)
+    theta = np.arctan2(np.sqrt(rho), xyz[2])
+    phi = np.arctan2(xyz[1], xyz[0])
+    return r, theta, phi
+
+
+def to_spherical_coordinates_vectorized(xyz):
+    """Same as `to_spherical_coordinates`, but accepts vector inputs."""
+    ptsnew = np.zeros_like(xyz)
+    xy = xyz[:,0]**2 + xyz[:,1]**2
+    ptsnew[:,0] = np.sqrt(xy + xyz[:,2]**2)
+    ptsnew[:,1] = np.arctan2(np.sqrt(xy), xyz[:,2]) # for elevation angle defined from Z-axis down
+    ptsnew[:,2] = np.arctan2(xyz[:,1], xyz[:,0])
+    return ptsnew
+
+
+def spherical_to_cartesian_coordinates(coords):
+    """Given (r, theta, phi) returns the corresponding cartesian (x, y, z)."""
+    r, theta, phi = coords
+    z = r * np.cos(theta)
+    rho = r * np.sin(theta)
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return x, y, z
+
+
+def degrees_to_spherical_coords(theta, phi):
+    """Takes angles measured in degrees, and returns the corresponding angles in radians.
+    
+    Given (theta, phi), returns (1, theta_r, phi_r), with theta_r, phi_r the angles in radians.
+    """
+    r = 1
+    factor = np.pi / 180
+    return r, factor * theta, factor * phi

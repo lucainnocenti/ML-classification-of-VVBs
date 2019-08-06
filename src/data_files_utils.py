@@ -2,6 +2,7 @@ import collections
 import glob
 import itertools
 import logging
+import time
 import math
 import os
 import sys
@@ -17,13 +18,10 @@ import sklearn
 import sklearn.decomposition
 
 import progressbar
+from tqdm import tqdm
+
 import utils
 import vector_vortex_beams as VVB
-# import keras
-# import matplotlib.pyplot as plt
-# import seaborn as sns
-# import tensorflow
-from tqdm import tqdm
 from utils import abs2
 
 
@@ -105,28 +103,57 @@ class ImageDataFolder:
 
 
 class ImagesDatasetToReduce:
-    def __init__(self, data_dir, pca):
-        # we assume that each image has NxNx3 pixels
-        pixel_width = int(np.sqrt(pca.components_[0].shape[0] // 3))
+    def __init__(self, data_dir, images_shape=None, pca=None,
+                 n_components=None, monitor=None):
+        self.data_dir = data_dir
+        # -- determine dimension of each image
+        if images_shape is None:
+            if pca is None:
+                raise ValueError('If the PCA is not trained I need explicit '
+                                 'specs for the shapes of the images.')
+            # we assume that each image has NxNx3 pixels
+            pixel_width = int(np.sqrt(pca.components_[0].shape[0] // 3))
+            self.images_shape = (pixel_width, pixel_width)
+        else:
+            self.images_shape = images_shape
+        # -- determine with pca reducer we want to use
+        if pca is None:
+            if n_components is None:
+                raise ValueError('If the PCA is not trained I need to know to '
+                                 'how many dimensions you want to reduce the '
+                                 'data.')
+            # in this case we also train the pca on the dataset
+            print('Training PCA on given dataset'); time.sleep(.3)
+            self.pca = train_pca_on_files_in_dir(
+                self.data_dir, n_components, output_shape=self.images_shape,
+                monitor=monitor)
+        else:
+            self.pca = pca
+
+        # -- load the images and store reduced representations
+
         # produce a dictionary with the keys being the labels and the
         # associated data the data arrays corresponding to the label
-        reduced_images, filenames = load_and_reduce_images_in_dir(
-            data_dir=data_dir, reducer=pca,
-            output_shape=(pixel_width, pixel_width),
-            return_classes=True, monitor='progressbar',
+        print('Computing reduced representation of the images'); time.sleep(.3)
+        self.reduced_images, self.filenames = load_and_reduce_images_in_dir(
+            data_dir=self.data_dir, reducer=self.pca,
+            output_shape=self.images_shape,
+            return_classes=True, monitor=monitor,
             return_filenames=True
         )
         # convert into two arrays, the first with the full dataset as an array
         # and the second one with the labels associated with each element
         # of the first
-        data, labels = utils.dict_of_arrays_to_labeled_array(reduced_images)
-        # store in the class the data
-        self.filenames = filenames
-        self.data_dir = data_dir
-        self.pca = pca
-        self.reduced_images = reduced_images
-        self.merged_data = data
-        self.labels = labels
+        self.merged_data, self.labels = utils.dict_of_arrays_to_labeled_array(
+            self.reduced_images)
+    
+    def train_svc(self, kernel, gamma='auto'):
+        self.svc = sklearn.svm.SVC(kernel=kernel, gamma=gamma)
+        self.svc.fit(self.merged_data, self.labels)
+
+    def test_svc_accuracy(self, svc):
+        predictions = svc.predict(self.merged_data)
+        return collections.Counter(predictions == self.labels)
 
 
 def load_resize_and_flatten_rgb_image(filename, output_shape):
@@ -175,6 +202,16 @@ def train_pca_on_files_in_dir(data_dir, n_components, output_shape=(50, 50),
             )
         ipca.partial_fit(images)
     return ipca
+
+
+def load_and_reduce_images(image_paths, reducer, output_shape=(50, 50)):
+    """Load and apply PCA to a list of image files."""
+    images = np.zeros(shape=(len(image_paths),
+                             output_shape[0] * output_shape[1] * 3))
+    for idx, filename in enumerate(image_paths):
+        images[idx] = load_resize_and_flatten_rgb_image(
+            filename, output_shape=output_shape)
+    return reducer.transform(images)
 
 
 def load_and_reduce_images_in_dir(data_dir, reducer, output_shape=(50, 50),
