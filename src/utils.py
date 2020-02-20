@@ -42,6 +42,7 @@ def imshow_intensities(amplitudes=None, intensities=None, imshow_opts={}, ax=Non
 
 def imshow_stokes_probs(prob_vectors, imshow_opts={}, axs=None, show_axis=True):
     """Plot stokes probabilities associated with a VVB state.
+    This produces three plots, one per Stoke parameter.
 
     Attributes
     ----------
@@ -87,7 +88,7 @@ def make_into_rgb_format(array):
     return rescale_array_values(array, [0, 255]).astype(np.uint8)
 
 
-def plot_stokes_probs_as_rbg(stokes_probs, ax=None):
+def plot_stokes_probs_as_rgb(stokes_probs, ax=None):
     if ax is None:
         _, ax = plt.subplots(1, 1)
     ax.imshow(make_into_rgb_format(stokes_probs))
