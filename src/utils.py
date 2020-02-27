@@ -1,10 +1,19 @@
 import os
 import sys
 import collections
+import glob
+import tqdm
+import PIL
+import random
+import imageio
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
+import skimage
+
+from keras.utils import np_utils
 
 
 def abs2(data):
@@ -27,6 +36,7 @@ def borderless_imshow_save(data, outputname, size=1, dpi=80, imshow_opts={}):
 
 
 def imshow_intensities(amplitudes=None, intensities=None, imshow_opts={}, ax=None):
+    """Plot imshow of squared modulus of amplitudes."""
     if amplitudes is None and intensities is None:
         raise ValueError('One of `amplitudes` and `intensities` must be given.')
     if amplitudes is not None and intensities is not None:
@@ -62,11 +72,29 @@ def imshow_stokes_probs(prob_vectors, imshow_opts={}, axs=None, show_axis=True):
     return axs
 
 
-def add_noise_to_array(data, noise_level=0.1):
-    """Add white noise to the data."""
-    data = np.asarray(data)
-    range_ = data.max() - data.min()
-    return data + np.random.randn(*data.shape) * (noise_level * range_)
+def imshow_row_from_paths(paths, **kwargs):
+    """Print a row of images from the list of given paths."""
+    import imageio
+    images = [imageio.imread(path) for path in paths]
+    imshow_row(images, **kwargs)
+
+
+def imshow_row(images, titles=None, plt_opts={}, axis='off',
+               subplots_adjust=(0, 0.02), imshow_opts={}):
+    """Print the given images in a row."""
+    if titles is None:
+        titles = ['' for _ in range(len(images))]
+    fig, axs = plt.subplots(nrows=1, ncols=len(images), **plt_opts)
+    if len(images) == 1:
+        axs.imshow(images, **imshow_opts)
+        axs.axis(axis)
+        axs.set_title(titles[0])
+    else:
+        for ax, image, title in zip(axs, images, titles):
+            ax.imshow(image, **imshow_opts)
+            ax.axis(axis)
+            ax.set_title(title)
+    fig.subplots_adjust(hspace=subplots_adjust[0], wspace=subplots_adjust[1])
 
 
 def rescale_array_values(array, range_, old_range=None):
@@ -89,11 +117,19 @@ def make_into_rgb_format(array):
 
 
 def plot_stokes_probs_as_rgb(stokes_probs, ax=None):
+    """Plot VVB as a single RGB image."""
     if ax is None:
         _, ax = plt.subplots(1, 1)
     ax.imshow(make_into_rgb_format(stokes_probs))
     ax.axis('off')
     return ax
+
+
+def add_noise_to_array(data, noise_level=0.1):
+    """Add white noise to the data."""
+    data = np.asarray(data)
+    range_ = data.max() - data.min()
+    return data + np.random.randn(*data.shape) * (noise_level * range_)
 
 
 def merge_dict_elements(dict_):
@@ -112,8 +148,6 @@ def dict_of_arrays_to_labeled_array(dict_):
 
     This function assumes that the keys of the given dictionary are of the form
     `cXX`, where `c` is a single char, and `XX` some integer number.
-
-
     """
     data = None
     labels = None
@@ -215,8 +249,228 @@ def spherical_to_cartesian_coordinates(coords):
 def degrees_to_spherical_coords(theta, phi):
     """Takes angles measured in degrees, and returns the corresponding angles in radians.
     
-    Given (theta, phi), returns (1, theta_r, phi_r), with theta_r, phi_r the angles in radians.
+    Given (theta, phi), returns (1, theta_r, phi_r),
+    with theta_r, phi_r the angles in radians.
     """
     r = 1
     factor = np.pi / 180
     return r, factor * theta, factor * phi
+
+
+def standardize_naming_class_folders(path):
+    """Changes name of each file in the subdirectory of the given path.
+    THIS IS POTENTIALLY DISASTROUS, BE CAREFUL!
+    
+    For each subdirectory names "X", it renames all the files it contains
+    to follow a naming scheme of the form "X_000.png", "X_001.png" etc.
+    """
+    raise ValueError('This can be disastrous to run. Just copy-paste the code'
+                     ' in your notebook and run it yourself if are sure.')
+    dirs = glob.glob(os.path.join(path, '*'))
+    for dir_ in dirs:
+        files = glob.glob(os.path.join(dir_, '*'))
+        for idx, file in enumerate(files):
+            oldname = os.path.abspath(file)
+            path, filename = os.path.split(oldname)
+            classname = os.path.split(path)[1]
+            base, ext = os.path.splitext(filename)
+            newname = os.path.join(path, '{}_{:03}.png'.format(classname, idx))
+            os.rename(oldname, newname)
+
+
+def find_all_images_in_dir(path, images_ext='jpeg'):
+    """Return all image files in subdirs of given path."""
+    all_images_paths = sorted(glob.glob(os.path.join(path, '*/*.' + images_ext)))
+    return np.asarray(all_images_paths)
+
+
+def invert_dict(input_dict):
+    """Assuming a bijection between keys and values, invert the mapping.
+    
+    Returns a dict of the form bi->ai from one of the form ai->bi.
+    """
+    values_ = list(input_dict.values())
+    if len(values_) != len(set(values_)):
+        raise ValueError('There are repeated values in the given dictionary.')
+    return dict((v, k) for k, v in input_dict.items())
+
+
+def serialize_class_directories(path):
+    """Converts the list of subdirs into integer values.
+    
+    Returns a dict mapping names of dirs to integers.
+    """
+    from keras.preprocessing.image import ImageDataGenerator
+    return ImageDataGenerator().flow_from_directory(path).class_indices
+
+
+def load_images_and_labels_from_dir(path, images_ext='jpeg', image_size=(128, 128)):
+    """Load all images from subdirectories of given path.
+    
+    Parameters
+    ----------
+    path : str
+        Directory containing the dataset. This is expected to contain
+        a number of subdirectories, one per class.
+    images_ext : str
+        All and only the files with this path will be considered.
+    image_size : tuple
+        Each loaded image is resized with this.
+    
+    Returns two elements: an array with all the images, and an array with
+    all the labels corresponding to the images
+    """
+    # iterate through all the images and load them into memory
+    all_images_paths = find_all_images_in_dir(path, images_ext)
+    num_images = len(all_images_paths)
+    all_images = np.zeros(shape=(num_images, *image_size, 3), dtype=np.float)
+    labels = np.ones(num_images, dtype=np.int) * (-1)
+    from keras.preprocessing.image import ImageDataGenerator
+    class_indices = ImageDataGenerator().flow_from_directory(path).class_indices
+
+    iterator = tqdm.tqdm(list(enumerate(all_images_paths)), position=0, leave=True)
+    for idx, image_path in iterator:
+        # which directory does the image belong to?
+        image_dir = os.path.split(os.path.split(image_path)[0])[1]
+        # extract integer of class corresponding to directory name
+        labels[idx] = class_indices[image_dir]
+        # load image
+        all_images[idx] = np.asarray(PIL.Image.open(image_path).resize(image_size)) / 255
+    return all_images, labels
+
+
+def print_truth_table(true_labels, predicted_labels, classes_to_indices_dict=None):
+    """Print truth table corresponding to given true and predicted labels.
+    
+    Parameters
+    ----------
+    true_labels : numpy 1d array
+        List of (numeric) correct labels, corresponding to some dataset.
+    predicted_labels : numpy 1d array
+        List of (numeric) predicted labels. Each element of this should
+        ideally be equal to the corresponding element of true_labels.
+    classes_to_indices_dict : dict
+        Dictionary mapping each class name to the corresponding numeric index.
+        If not given, we use the index as label for each class.
+    """
+    if classes_to_indices_dict is None:
+        classes_to_indices_dict = {k:k for k in set(true_labels)}
+    # create sorted list of class names and corresponding indices
+    list_of_labels_names = list(classes_to_indices_dict.keys())
+    list_of_labels_indices = [classes_to_indices_dict[name]
+                              for name in list_of_labels_names]
+    # compute accuracy per class
+    num_classes = len(list_of_labels_names)
+    accuracies = []
+    for label in list_of_labels_indices:
+        correct_indices = np.argwhere(true_labels == label).flatten()
+        counts = np.bincount(predicted_labels[correct_indices]).astype(np.float)
+        counts = np.append(counts, np.zeros(num_classes - counts.shape[0]))
+        counts /= correct_indices.shape[0]
+        accuracies.append(counts)
+    accuracies = np.array(accuracies)
+    # display truth table
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    sns.heatmap(accuracies, annot=True, cbar=False, square=True, ax=ax,
+                xticklabels=list_of_labels_names, yticklabels=list_of_labels_names)
+
+
+def filenames_from_list_of_paths(paths):
+    """Returns the last bit of the paths given as input.
+    
+    E.g. from ['a/b', 'c/d'] we get ['b', 'd'].
+    """
+    return [os.path.split(path)[1] for path in paths]
+
+
+def load_all_images_from_dict(dict_of_images, resize=(128, 128)):
+    """Load all images into dict of classes.
+    
+    Each element of the input dict should contains a number of paths of images to load.
+    The keys are the names of the classes.
+    
+    Returns
+    -------
+    A pair of arrays. The first one is the loaded dataset (as a single array), and
+    the second one is the corresponding array of labels.
+    """
+    classes_names = sorted(list(dict_of_images.keys()))
+    num_classes = len(classes_names)
+    classes_to_idx_dict = {k:v for k,v in zip(classes_names, np.arange(num_classes))}
+    total_num_imgs = sum(len(items) for items in dict_of_images.values())
+    
+    out_images = np.zeros(shape=(total_num_imgs, *resize, 3), dtype=np.float)
+    out_labels = np.zeros(shape=(total_num_imgs, num_classes), dtype=np.float)
+    labels_idx = 0
+    imgs_idx = 0
+    iterator = tqdm.tqdm(list(dict_of_images.items()), position=0, leave=True)
+    for class_, images in iterator:
+        # store labels
+        out_labels[labels_idx:labels_idx + len(images)] = np_utils.to_categorical(
+            y=classes_to_idx_dict[class_], num_classes=num_classes)
+        labels_idx = labels_idx + len(images)
+        # store images
+        for image in images:
+            out_images[imgs_idx] = skimage.transform.resize(
+                image=imageio.imread(image) / 255,
+                output_shape=resize
+            )
+            imgs_idx += 1
+    return out_images, out_labels
+
+
+def split_dict_into_two_dicts(dict_of_classes, dim_train_classes):
+    """Split elements of dict into two disjoint dicts.
+    
+    Parameters
+    ----------
+    dict_of_classes : dict
+        The dictionary we want to split
+    dim_train_classes : int
+        Number of elements in each class to put into the first output dict.
+    """
+    # randomly sample from each element of `dict_of_classes`
+    train_dict = dict()
+    test_dict = dict()
+    for class_name, items in dict_of_classes.items():
+        random.shuffle(items)
+        train_dict[class_name] = items[:dim_train_classes]
+        test_dict[class_name] = items[dim_train_classes:]
+    return train_dict, test_dict
+
+
+def split_dataset_into_train_and_test(original_path, dim_train_set, img_ext='jpeg'):
+    """Take dataset in path and produce a train and test dataset from it.
+    
+    This loads all the images in the subdirs of the given path into memory, so
+    be sure to have enough memory.
+    
+    Parameters
+    ----------
+    original_path : str
+        Path containing class directories (and all of the data)
+    dim_train_set : int
+        The number of elements to include in each training class.
+    img_ext : str
+        Only files with this extension will be used.
+
+    Returns
+    -------
+    A tuple with four elements: x_train, y_train, x_test, y_test
+    """
+    list_of_classes_dirs = glob.glob(os.path.join(original_path, '*'))
+    num_images_per_class = [len(glob.glob(os.path.join(path, '*.' + img_ext)))
+                            for path in list_of_classes_dirs]
+    if any(dim_train_set > num for num in num_images_per_class):
+        raise ValueError('Not enough images in the class directories.')
+    # gather all images
+    all_paths_dict = dict()
+    for class_dir in list_of_classes_dirs:
+        all_paths_dict[os.path.split(class_dir)[1]] = glob.glob(os.path.join(class_dir, '*.' + img_ext))
+    # randomly sample `dim_train_set` images from each class
+    train_paths_dict, test_paths_dict = split_dict_into_two_dicts(all_paths_dict, dim_train_set)
+    # load all images into memory
+    train_images = None
+    x_train, y_train = load_all_images_from_dict(train_paths_dict)
+    x_test, y_test = load_all_images_from_dict(test_paths_dict)
+    return x_train, y_train, x_test, y_test

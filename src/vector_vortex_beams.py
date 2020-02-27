@@ -22,12 +22,23 @@ import itertools
 import src.utils as utils
 from src.utils import abs2
 
+# Camera resolution
+# camera_width = 1024
+# camera_height = 768
+camera_width = 300
+camera_height = 300
+Y, X = np.meshgrid(
+    np.linspace(-camera_height / 2, camera_height / 2, num=camera_height),
+    np.linspace(-camera_width / 2, camera_width / 2, num=camera_width)
+)
+reference_w0 = 50
+
 
 def angle(x, y):
     return np.arctan2(x, y)
 
 
-def LaguerreGauss(x, y, p, m, w0):
+def LaguerreGauss(p, m, x=X, y=Y, w0=reference_w0):
     laguerreP = scipy.special.genlaguerre(p, np.abs(m))
     R2 = x**2 + y**2
     lg = 0 * 1j + np.sqrt((2**(np.abs(m) + 1) * scipy.special.gamma(1 + p)) /
@@ -315,7 +326,7 @@ class OAMDataset(ReduceAndClassify):
         
         Attributes
         ----------
-        parameters ; list of tuples
+        parameters : list of tuples
             Each element should be a list of pairs [(p1, m1), (p2, m2), ...].
         """
         dataset = collections.OrderedDict()

@@ -20,9 +20,9 @@ import sklearn.decomposition
 import progressbar
 from tqdm import tqdm
 
-import utils
-import vector_vortex_beams as VVB
-from utils import abs2
+from . import utils
+from .utils import abs2
+from . import vector_vortex_beams as VVB
 
 
 def generate_VVB_superpositions_dataset(
