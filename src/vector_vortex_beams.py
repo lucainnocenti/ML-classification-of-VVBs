@@ -134,8 +134,8 @@ def vector_vortex_stokes_pars(X, Y, p, m_pair, w0, polarization_state):
         raise ValueError('There must be two elements in `m_pair`.')
 
     c0, c1 = polarization_state
-    amps_m1 = c0 * LaguerreGauss(X, Y, p=p, m=m_pair[0], w0=w0)
-    amps_m2 = c1 * LaguerreGauss(X, Y, p=p, m=m_pair[1], w0=w0)
+    amps_m1 = c0 * LaguerreGauss(p=p, m=m_pair[0], x=X, y=Y, w0=w0)
+    amps_m2 = c1 * LaguerreGauss(p=p, m=m_pair[1], x=X, y=Y, w0=w0)
     average_Z = abs2(amps_m1) - abs2(amps_m2)
     twice_c0star_times_c1 = 2 * np.conj(amps_m1) * amps_m2
     average_X = np.real(twice_c0star_times_c1)
@@ -316,7 +316,7 @@ class OAMDataset(ReduceAndClassify):
             amps = np.zeros(shape=len(self.X) * len(self.Y), dtype=np.complex)
             for p, m in pm_list:
                 amps += LaguerreGauss(
-                    self.X, self.Y, p=p, m=m, w0=self.w0).flatten()
+                    x=self.X, y=self.Y, p=p, m=m, w0=self.w0).flatten()
             data[idx] = utils.add_noise_to_array(abs2(amps), noise_level=noise_level)
         return data
 

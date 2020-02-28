@@ -1,3 +1,3 @@
 # Guide to notebooks and trainings
 
-- 'CNNs for VVBs.ipynb'. Training and testing of CNNs to classify VVBs.
+- `CNNs_for_VVBs_15classes.ipynb`. Training and testing CNNs to classify VVBs according to their (m1, m2) quantum numbers.
