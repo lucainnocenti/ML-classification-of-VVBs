@@ -97,6 +97,20 @@ def imshow_row(images, titles=None, plt_opts={}, axis='off',
     fig.subplots_adjust(hspace=subplots_adjust[0], wspace=subplots_adjust[1])
 
 
+def plot_row(data, str_opts='', plt_opts={}):
+    data = np.asarray(data)
+    if data.ndim == 2 and data.shape[0] == 1:
+        data = data[0]
+    # with two dimensions, assume a list of data points (no xs, only ys)
+    if data.ndim == 2:
+        fig, axs = plt.subplots(nrows=1, ncols=data.shape[0], **plt_opts)
+        for ax, ys in zip(axs, data):
+            ax.plot(ys, str_opts)
+        return fig, axs
+    else:
+        raise NotImplementedError('todo')
+
+
 def rescale_array_values(array, range_, old_range=None):
     min_, max_ = range_
     if old_range is None:
@@ -474,3 +488,35 @@ def split_dataset_into_train_and_test(original_path, dim_train_set, img_ext='jpe
     x_train, y_train = load_all_images_from_dict(train_paths_dict)
     x_test, y_test = load_all_images_from_dict(test_paths_dict)
     return x_train, y_train, x_test, y_test
+
+
+def save_data_into_files(x, y, classes_dict, new_path):
+    """Take sets of images and labels and saves everything in a directory.
+    
+    The followed files are sorted into the usual directory structure.
+    This is sort of an inverse operation of `split_dataset_into_train_and_test`.
+
+    Parameters
+    ----------
+    x : numpy array
+        Array of images.
+    y : numpy array
+        Each element of this is a label corresponding to an element of `x`.
+        The labels are stored in categorical form, use np.argmax to convert them
+        into integers.
+    classes_dict : dict
+        Dictionary mapping class labels into class indices.
+    new_path : str
+        Where to save the data.
+    """
+    all_labels = np.argmax(y, axis=1)
+    print('Saving...', end='')
+    for label, label_idx in classes_dict.items():
+        os.makedirs(os.path.join(new_path, label))
+        print(' {},'.format(label), end='')
+        good_indices = np.argwhere(all_labels == label_idx).flatten()
+        for idx, good_idx in enumerate(good_indices):
+            imageio.imwrite(uri=os.path.join(new_path, label, '{}_{:03}.jpeg'.format(label, idx)),
+                            im=(x[good_idx] * 255).astype(np.uint8))
+    print()
+    print('All done chief')
