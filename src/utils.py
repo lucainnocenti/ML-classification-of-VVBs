@@ -199,16 +199,16 @@ def truncate_in_reduced_space(data, trained_pca, num_dimensions_left):
 
 def compute_accuracies_per_label(true_labels, predicted_labels, labels_names=None):
     if labels_names is None:
-        labels_names = list(set(true_labels))  # do not have to be numeric
+        labels_names = sorted(list(set(true_labels)))  # do not have to be numeric
     # convert the labels into integers to ease handling
     labels_indices = list(range(len(labels_names)))
     
     accuracies_per_label = collections.OrderedDict()
-    for label_idx in labels_indices:
+    for label_name in labels_names:
         # we want to compute the output accuracies for this specific label
         accuracies = np.zeros(shape=(len(labels_names),))
         # extract the elements corresponding to the currently considered true label
-        true_labels_indices = np.where(true_labels == labels_names[label_idx])
+        true_labels_indices = np.where(true_labels == label_name)
         # true_labels_per_class = true_labels[true_labels_indices]
         predictions = predicted_labels[true_labels_indices]
         # we iterate over all the labels that the classifier associated with the
@@ -218,7 +218,8 @@ def compute_accuracies_per_label(true_labels, predicted_labels, labels_names=Non
             predicted_label_idx = labels_names.index(predicted_label_name)
             # put the number of times this label was predicted in `accuracies`
             accuracies[predicted_label_idx] = count / len(predictions)
-        accuracies_per_label[label_idx] = accuracies
+        accuracies_per_label[label_name] = accuracies
+#         raise ValueError('stop right there mister!')
     return accuracies_per_label
 
 
@@ -271,6 +272,47 @@ def degrees_to_spherical_coords(theta, phi):
     return r, factor * theta, factor * phi
 
 
+def switch_from_cs_to_sensible_convention():
+    """Return a dictionary mapping cXX strings into m1m2 strings."""
+    d = dict()
+    d['c1'] = '-1+1'
+    d['c01'] = '-1+1'
+    d['c2'] = '-3+3'
+    d['c02'] = '-3+3'
+    d['c3'] = '-5+5'
+    d['c03'] = '-5+5'
+    d['c4'] = '-5-3'
+    d['c04'] = '-5-3'
+    d['c5'] = '-5-1'
+    d['c05'] = '-5-1'
+    d['c6'] = '-5+1'
+    d['c06'] = '-5+1'
+    d['c7'] = '-5+3'
+    d['c07'] = '-5+3'
+    d['c8'] = '-3-1'
+    d['c08'] = '-3-1'
+    d['c9'] = '-3+1'
+    d['c09'] = '-3+1'
+    d['c10'] = '-3+5'
+    d['c11'] = '-1+3'
+    d['c12'] = '-1+5'
+    d['c13'] = '+1+3'
+    d['c14'] = '+1+5'
+    d['c15'] = '+3+5'
+    return d
+
+
+def modernize_15classes_naming_convention(path):
+    """DANGEROUS"""
+    raise ValueError('ARE YOU SURE?')
+    priest_dict = switch_from_cs_to_sensible_convention()
+    subdirs = [dir_ for dir_ in glob.glob(os.path.join(path, '*')) if os.path.isdir(dir_)] 
+    for dir_ in subdirs:
+        dirname = os.path.split(dir_)[1]
+        newdirpath = os.path.join(path, priest_dict[dirname])
+        os.rename(src=dir_, dst=newdirpath)
+
+
 def standardize_naming_class_folders(path):
     """Changes name of each file in the subdirectory of the given path.
     THIS IS POTENTIALLY DISASTROUS, BE CAREFUL!
@@ -278,8 +320,8 @@ def standardize_naming_class_folders(path):
     For each subdirectory names "X", it renames all the files it contains
     to follow a naming scheme of the form "X_000.png", "X_001.png" etc.
     """
-    raise ValueError('This can be disastrous to run. Just copy-paste the code'
-                     ' in your notebook and run it yourself if are sure.')
+    raise ValueError('This can be disastrous. Just copy-paste the code'
+                     ' in your notebook and run it yourself if you feel brave.')
     dirs = glob.glob(os.path.join(path, '*'))
     for dir_ in dirs:
         files = glob.glob(os.path.join(dir_, '*'))
