@@ -24,11 +24,22 @@ from . import utils
 from .utils import abs2
 from . import vector_vortex_beams as VVB
 
+# Camera resolution
+# camera_width = 1024
+# camera_height = 768
+camera_width = 300
+camera_height = 300
+Y, X = np.meshgrid(
+    np.linspace(-camera_height / 2, camera_height / 2, num=camera_height),
+    np.linspace(-camera_width / 2, camera_width / 2, num=camera_width)
+)
+reference_w0 = 50
+
 
 def generate_VVB_superpositions_dataset(
     pars_to_generate, data_dir, num_samples_per_class=50, noise_level=0.1,
     polarization_state='sequential phases', monitor=False,
-    X=None, Y=None, w0=None, output_shape=(50, 50)
+    X=X, Y=Y, w0=reference_w0, output_shape=(50, 50)
 ):
     if X is None or Y is None or w0 is None:
         raise ValueError('These are not really mandatory arguments')

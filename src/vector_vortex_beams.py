@@ -303,7 +303,7 @@ class ReduceAndClassify:
 
 
 class OAMDataset(ReduceAndClassify):
-    def __init__(self, X, Y, w0):
+    def __init__(self, X=X, Y=Y, w0=reference_w0):
         self.X = X
         self.Y = Y
         self.w0 = w0
@@ -353,7 +353,7 @@ class OAMDataset(ReduceAndClassify):
 
 
 class VVBDataset(ReduceAndClassify):
-    def __init__(self, X, Y, w0):
+    def __init__(self, X=X, Y=Y, w0=reference_w0):
         self.X = X
         self.Y = Y
         self.w0 = w0
