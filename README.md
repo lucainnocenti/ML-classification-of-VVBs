@@ -6,7 +6,7 @@ Authors: Taira Giordani, Alessia Suprano, Emanuele Polino, Francesca Acanfora, L
 
 # Guide to folders
 
-- `notebooks`. Jupyer notebooks containing code and explanations to reproduce the results of the paper.
-- `src`. The notebooks use a number of supporting functions, which are all defined here.
-- `data`. Contains the datasets used in the notebooks.
-- `saved_CNN_models`. Pre-trained CNNs used in the notebooks.
+- [`notebooks`](./notebooks). Jupyer notebooks containing code and explanations to reproduce the results of the paper.
+- [`src`](./src). The notebooks use a number of supporting functions, which are all defined here.
+- [`data`](./data). Contains the datasets used in the notebooks.
+- [`saved_CNN_models`](./saved_CNN_models). Pre-trained CNNs used in the notebooks.
