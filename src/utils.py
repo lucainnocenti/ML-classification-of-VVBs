@@ -272,27 +272,29 @@ def degrees_to_spherical_coords(theta, phi):
     return r, factor * theta, factor * phi
 
 
-def switch_from_cs_to_sensible_convention():
+def switch_from_cs_to_sensible_convention(naming='lax'):
     """Return a dictionary mapping cXX strings into m1m2 strings."""
     d = dict()
-    d['c1'] = '-1+1'
-    d['c01'] = '-1+1'
-    d['c2'] = '-3+3'
-    d['c02'] = '-3+3'
-    d['c3'] = '-5+5'
-    d['c03'] = '-5+5'
-    d['c4'] = '-5-3'
-    d['c04'] = '-5-3'
-    d['c5'] = '-5-1'
-    d['c05'] = '-5-1'
-    d['c6'] = '-5+1'
-    d['c06'] = '-5+1'
-    d['c7'] = '-5+3'
-    d['c07'] = '-5+3'
-    d['c8'] = '-3-1'
-    d['c08'] = '-3-1'
-    d['c9'] = '-3+1'
-    d['c09'] = '-3+1'
+    if naming == 'old' or naming == 'lax':
+        d['c1'] = '-1+1'
+        d['c2'] = '-3+3'
+        d['c3'] = '-5+5'
+        d['c4'] = '-5-3'
+        d['c5'] = '-5-1'
+        d['c6'] = '-5+1'
+        d['c7'] = '-5+3'
+        d['c8'] = '-3-1'
+        d['c9'] = '-3+1'
+    if naming == 'new' or naming == 'lax':
+        d['c01'] = '-1+1'
+        d['c02'] = '-3+3'
+        d['c03'] = '-5+5'
+        d['c04'] = '-5-3'
+        d['c05'] = '-5-1'
+        d['c06'] = '-5+1'
+        d['c07'] = '-5+3'
+        d['c08'] = '-3-1'
+        d['c09'] = '-3+1'
     d['c10'] = '-3+5'
     d['c11'] = '-1+3'
     d['c12'] = '-1+5'
@@ -351,16 +353,38 @@ def invert_dict(input_dict):
     return dict((v, k) for k, v in input_dict.items())
 
 
-def serialize_class_directories(path):
+def serialize_class_directories(path, naming=None):
     """Converts the list of subdirs into integer values.
     
     Returns a dict mapping names of dirs to integers.
+    
+    The parameter `naming` determines how the sorting is done.
+        - If naming=None, we just use `sorted` on the list of names before
+        assigning the indices.
+        - If naming='cx', we convert the names back into cXX notation, sort
+        them there, and only then assign the indices (this is done because
+        some networks were trained with the old class naming).
     """
-    from keras.preprocessing.image import ImageDataGenerator
-    return ImageDataGenerator().flow_from_directory(path).class_indices
+    # extract list of level 0 directories
+    dirs = [d for d in glob.glob(os.path.join(path, '*')) if os.path.isdir(d)]
+    names = sorted([os.path.split(d)[1] for d in dirs])
+    if naming is not None and naming == 'cx':
+        d = switch_from_cs_to_sensible_convention('old')
+        inv_d = invert_dict(d)
+        names = sorted([inv_d[name] for name in names])
+        names = [d[name] for name in names]
+    elif naming is not None and naming == 'c0x':
+        d = switch_from_cs_to_sensible_convention('new')
+        inv_d = invert_dict(d)
+        names = sorted([inv_d[name] for name in names])
+        names = [d[name] for name in names]
+    
+    return {v:k for k, v in enumerate(names)}
 
 
-def load_images_and_labels_from_dir(path, images_ext='jpeg', image_size=(128, 128)):
+def load_images_and_labels_from_dir(path, images_ext='jpeg',
+                                    image_size=(128, 128), num_images=None,
+                                    naming=None):
     """Load all images from subdirectories of given path.
     
     Parameters
@@ -372,17 +396,24 @@ def load_images_and_labels_from_dir(path, images_ext='jpeg', image_size=(128, 12
         All and only the files with this path will be considered.
     image_size : tuple
         Each loaded image is resized with this.
+    naming : str
+        Used to specify what were the names of the class directory when
+        the network was trained. Accepted values are:
+        - `cx`: for when the directories used the naming `c1`, `c2`, etc.
+        - `c0x`: for when the directories used the naming `c01`, `c02`, etc.
+        - `None`: sort class names as they are currently.
     
     Returns two elements: an array with all the images, and an array with
     all the labels corresponding to the images
     """
     # iterate through all the images and load them into memory
     all_images_paths = find_all_images_in_dir(path, images_ext)
+    if num_images is not None:
+        all_images_paths = all_images_paths[:num_images]
     num_images = len(all_images_paths)
     all_images = np.zeros(shape=(num_images, *image_size, 3), dtype=np.float)
     labels = np.ones(num_images, dtype=np.int) * (-1)
-    from keras.preprocessing.image import ImageDataGenerator
-    class_indices = ImageDataGenerator().flow_from_directory(path).class_indices
+    class_indices = serialize_class_directories(path, naming)
 
     iterator = tqdm.tqdm(list(enumerate(all_images_paths)), position=0, leave=True)
     for idx, image_path in iterator:
@@ -395,8 +426,11 @@ def load_images_and_labels_from_dir(path, images_ext='jpeg', image_size=(128, 12
     return all_images, labels
 
 
-def print_truth_table(true_labels, predicted_labels, classes_to_indices_dict=None):
+def print_truth_table(true_labels, predicted_labels,
+                      classes_to_indices_dict=None, postprocesslabels_fun=None):
     """Print truth table corresponding to given true and predicted labels.
+    
+    It's preferable to use `print_truth_table_pd` over this, if possible.
     
     Parameters
     ----------
@@ -425,10 +459,48 @@ def print_truth_table(true_labels, predicted_labels, classes_to_indices_dict=Non
         counts /= correct_indices.shape[0]
         accuracies.append(counts)
     accuracies = np.array(accuracies)
+    # pretty print labels
+    if postprocesslabels_fun is not None:
+        list_of_labels_names = [postprocesslabels_fun(s)
+                                for s in list_of_labels_names]
     # display truth table
     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
     sns.heatmap(accuracies, annot=True, cbar=False, square=True, ax=ax,
-                xticklabels=list_of_labels_names, yticklabels=list_of_labels_names)
+                xticklabels=list_of_labels_names,
+                yticklabels=list_of_labels_names)
+
+
+def print_truth_table_pd(true_labels, predicted_labels,
+                         prettifier=None, elements_sorter=None):
+    """Print truth table from data stored in pandas Series.
+    
+    Parameters
+    ----------
+    prettifier : function
+        Function taking a label as input and making it nicer.
+    elements_sorter : function
+        Function used to determine the order of the elements.
+    """
+    df = pd.crosstab(true_labels, predicted_labels)
+    # rearrange rows/columns, if due
+    if elements_sorter is not None:
+        cols = df.columns.tolist()
+        cols = sorted(cols, key=elements_sorter)
+        df = df[cols]
+        df = df.reindex(cols)
+    # actually plot stuff
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    sns.heatmap(df / df.sum(axis=1), ax=ax, square=True, annot=True,
+                cbar=False, cmap='viridis')
+    # prettify labels, if due
+    if prettifier is not None:
+        labels = [prettifier(label.get_text()) for label in ax.get_xticklabels()]
+        ax.set_xticklabels(labels)
+        ax.set_yticklabels(labels)
+    # no plot labels
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    return fig, ax
 
 
 def filenames_from_list_of_paths(paths):
