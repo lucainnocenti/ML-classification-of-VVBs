@@ -23,8 +23,8 @@ dependencies:
   - scipy=1.4.1
   - seaborn=0.10.0
   - tensorflow=1.13.1
+  - pillow
+  - qutip
   - pip:
-    - pillow==6.0.0
-    - qutip==4.3.1
     - tqdm==4.31.1
 
