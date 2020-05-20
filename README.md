@@ -26,3 +26,5 @@ Alternatively, using `pip`, run the following:
 ```bash
 pip install -r requirements.txt
 ```
+
+Note that some of the notebooks assume the same directory structure of the repo is mantained. Running notebooks saved in different locations will require to manually make sure that the code in `./src` is available to be imported in the notebook.
