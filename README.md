@@ -1,6 +1,6 @@
 Source code and data for the paper:
 
-> Taira Giordani, Alessia Suprano, Emanuele Polino, Francesca Acanfora, Luca Innocenti, Alessandro Ferraro, Mauro Paternostro, Nicoló Spagnolo, and Fabio Sciarrino, ***Machine learning-based classification of vector vortex beams***, [Phys. Rev. Lett. 124, 160401, (2020)](https://doi.org/10.1103/PhysRevLett.124.160401).
+> Taira Giordani, Alessia Suprano, Emanuele Polino, Francesca Acanfora, Luca Innocenti, Alessandro Ferraro, Mauro Paternostro, Nicoló Spagnolo, and Fabio Sciarrino, ***Machine learning-based classification of vector vortex beams***, [Phys. Rev. Lett. 124, 160401, (2020)](https://doi.org/10.1103/PhysRevLett.124.160401), [arXiv:2005.07949](https://arxiv.org/abs/2005.07949).
 
 
 # Content
