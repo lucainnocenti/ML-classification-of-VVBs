@@ -81,7 +81,7 @@ python-dateutil==2.8.1
 python-utils==2.4.0
 pytz==2019.3
 PyWavelets==1.1.1
-PyYAML==5.3
+PyYAML==5.4
 pyzmq==19.0.0
 qutip==4.3.1
 requests==2.23.0
