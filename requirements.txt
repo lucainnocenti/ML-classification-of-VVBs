@@ -61,7 +61,7 @@ pluggy==0.12.0
 progressbar==2.5
 progressbar2==3.50.0
 prompt-toolkit==3.0.3
-protobuf==3.11.3
+protobuf==3.18.3
 ptyprocess==0.6.0
 py==1.8.1
 pycparser==2.19
